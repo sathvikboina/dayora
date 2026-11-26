@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Dayora"
+rootProject.name = "Sonder"
 include(":app")

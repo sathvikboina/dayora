@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
-    <!-- Hard privacy rule: Dayora journals never leave the device automatically -->
+    <!-- Hard privacy rule: Sonder journals never leave the device automatically -->
     <cloud-backup>
         <exclude domain="database" path="." />
         <exclude domain="file" path="datastore/" />
