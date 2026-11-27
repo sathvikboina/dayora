@@ -10,3 +10,6 @@ captures/
 app/release.jks
 *.jks
 *.keystore
+
+# apk signing sidecars
+apk/*.idsig
