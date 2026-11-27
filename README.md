@@ -83,6 +83,13 @@ Debug builds and pull requests never need signing secrets.
 - Embeddings are omitted from backups and recomputed locally on restore.
 - A lost backup password cannot be recovered — that is the point.
 
+## Project workbook
+
+[`Sonder_Work_Log.xlsx`](Sonder_Work_Log.xlsx) is the living project record: an overview,
+a feature-by-feature sheet with verification status, a chronological work log, exact
+toolchain/build commands, test results, every issue and fix, APK hashes/permissions, and
+emulator screenshots. It is updated alongside the code.
+
 ## Project layout
 
 ```
