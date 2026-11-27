@@ -114,7 +114,7 @@ fun SettingsScreen(
                     .onSuccess { report: RestoreReport ->
                         onNotify(
                             if (report.imported == 0) "Nothing newer to restore."
-                            else "Restored ${report.imported} memories."
+                            else "Restored ${report.imported} ${if (report.imported == 1) "memory" else "memories"}."
                         )
                     }
                     .onFailure { onNotify("Restore failed — wrong password or damaged file.") }
@@ -252,7 +252,7 @@ fun SettingsScreen(
         SettingsDivider()
         SectionTitle("YOUR DATA")
         Text(
-            text = "$entryCount memories on this device. Embeddings are recomputed on restore.",
+            text = "$entryCount ${if (entryCount == 1) "memory" else "memories"} on this device. Embeddings are recomputed on restore.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
         )

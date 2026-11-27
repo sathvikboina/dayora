@@ -105,7 +105,8 @@ fun HomeScreen(
                             LocalDate.now()
                         ) + 1
                     }.getOrDefault(1L)
-                    "Collecting since ${DateDisplayFormatter.isoToDisplayString(firstEntryIsoDate)} · $days days"
+                    val dayLabel = if (days == 1L) "day" else "days"
+                    "Collecting since ${DateDisplayFormatter.isoToDisplayString(firstEntryIsoDate)} · $days $dayLabel"
                 } else {
                     "A living vault for the days that felt good"
                 },

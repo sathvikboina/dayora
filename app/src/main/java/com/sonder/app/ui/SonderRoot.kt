@@ -221,7 +221,14 @@ private fun MainVault(
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // The Rain Room paints its own night backdrop edge to edge; everything else
+        // lives inside the standard scaffold insets.
+        val contentModifier = if (route == Route.RAIN_ROOM) {
+            Modifier.fillMaxSize()
+        } else {
+            Modifier.fillMaxSize().padding(padding)
+        }
+        Box(modifier = contentModifier) {
             when (route) {
                 Route.HOME -> HomeScreen(
                     goodDayCount = goodDayCount,
