@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sonder</string>
+    <string name="tagline">A living vault for the days that felt good.</string>
+    <string name="cta_capture_today">Capture today</string>
+    <string name="cta_edit_today">Today: %1$s · Edit</string>
+    <string name="prompt_good_reason">What made today good? (optional)</string>
+    <string name="prompt_heavy_reason">Want to put something down? (optional)</string>
+    <string name="rain_room_title">The Rain Room</string>
+    <string name="rain_room_subtitle">A private place to set heavy days down.</string>
+    <string name="count_as_good_label">Count this as a good day</string>
+    <string name="save_button">Save</string>
+    <string name="settings_title">Settings</string>
+    <string name="calendar_title">Calendar</string>
+    <string name="threads_title">Threads</string>
+    <string name="reminder_channel_name">Quiet evening reminder</string>
+    <string name="reminder_title">A quiet moment for today</string>
+    <string name="reminder_text">Set the day down before it slips away.</string>
+</resources>

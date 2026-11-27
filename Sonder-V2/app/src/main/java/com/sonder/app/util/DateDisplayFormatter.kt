@@ -1,0 +1,33 @@
+package com.sonder.app.util
+
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+object DateDisplayFormatter {
+
+    private val isoFormatter: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+    private val userDisplayFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
+
+    fun toStorageIso(date: LocalDate): String = date.format(isoFormatter)
+
+    fun fromStorageIso(isoDate: String): LocalDate = LocalDate.parse(isoDate, isoFormatter)
+
+    fun toDisplayString(date: LocalDate): String = date.format(userDisplayFormatter)
+
+    fun isoToDisplayString(isoDate: String): String = toDisplayString(fromStorageIso(isoDate))
+
+    fun backupFilename(date: LocalDate = LocalDate.now()): String =
+        "sonder_backup_\${toDisplayString(date)}.json"
+
+    fun currentTimezoneId(): String = ZoneId.systemDefault().id
+
+    fun shouldOfferMidnightGrace(
+        nowTime: LocalTime,
+        yesterdayHasEntry: Boolean
+    ): Boolean {
+        val isLateNight = nowTime.hour in 0..3
+        return isLateNight && !yesterdayHasEntry
+    }
+}
