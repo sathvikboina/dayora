@@ -7,6 +7,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sonder.app.ui.SonderRoot
 import com.sonder.app.ui.SonderViewModel
+import com.sonder.app.widget.SonderWidgetProvider
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,5 +17,10 @@ class MainActivity : FragmentActivity() {
             val viewModel: SonderViewModel = viewModel()
             SonderRoot(viewModel)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SonderWidgetProvider.refresh(this)
     }
 }

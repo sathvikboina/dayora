@@ -59,6 +59,13 @@ fun DayState.auraColor(): Color = when (this) {
     DayState.HEAVY -> Color(0xFF566784)
 }
 
+/** Keeps the room's atmosphere honest when the user forces light or dark. */
+fun TimeOfDayMood.forDarkTheme(dark: Boolean): TimeOfDayMood = when {
+    dark && !isDark -> TimeOfDayMood.NIGHT
+    !dark && isDark -> TimeOfDayMood.DAY
+    else -> this
+}
+
 private val SonderTypography = Typography(
     displayLarge = TextStyle(fontSize = 57.sp, lineHeight = 64.sp, fontWeight = FontWeight.Light),
     headlineMedium = TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Normal),

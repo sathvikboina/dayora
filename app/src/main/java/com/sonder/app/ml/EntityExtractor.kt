@@ -1,13 +1,18 @@
 package com.sonder.app.ml
 
-import com.sonder.app.data.local.entity.EntryTagEntity
+import com.sonder.app.data.local.entity.MomentTagEntity
 
 /**
- * Very small on-device entity extractor. It looks for recurring people
- * (capitalised names), known places, and common activities so Memory Threads
- * work without any network call or heavy NER model.
+ * Tiny on-device entity extractor: capitalised people, known places and common
+ * activities. Everything is returned as an unconfirmed "We noticed…" suggestion
+ * so it can never overwrite what the user wrote.
  */
 object EntityExtractor {
+
+    data class ExtractedTag(
+        val name: String,
+        val type: String
+    )
 
     private val commonCapitalised = setOf(
         "I", "The", "A", "An", "Today", "Yesterday", "Tomorrow", "Monday", "Tuesday",
@@ -29,14 +34,15 @@ object EntityExtractor {
         "football", "movie", "game", "gaming", "dance", "yoga", "meditation"
     )
 
-    fun extract(text: String, existingTags: Set<String> = emptySet()): List<EntryTagEntity> {
+    fun extract(text: String, existingTags: Set<String> = emptySet()): List<ExtractedTag> {
         if (text.isBlank()) return emptyList()
         val found = LinkedHashMap<String, String>()
+        val existingNormalized = existingTags.map { it.trim().lowercase() }.toSet()
 
         Regex("\\b[A-Z][a-z]{2,}\\b").findAll(text).forEach { match ->
             val word = match.value
             if (word !in commonCapitalised && word.lowercase() !in placeWords) {
-                found.putIfAbsent(word, "PERSON")
+                found.putIfAbsent(word, MomentTagEntity.TAG_TYPE_PERSON)
             }
         }
 
@@ -47,22 +53,20 @@ object EntityExtractor {
                 else -> word
             }
             when (canonical) {
-                in placeWords -> found.putIfAbsent(canonical.replaceFirstChar { it.uppercase() }, "PLACE")
-                in activityWords -> found.putIfAbsent(canonical.replaceFirstChar { it.uppercase() }, "TOPIC")
+                in placeWords -> found.putIfAbsent(
+                    canonical.replaceFirstChar { it.uppercase() },
+                    MomentTagEntity.TAG_TYPE_PLACE
+                )
+                in activityWords -> found.putIfAbsent(
+                    canonical.replaceFirstChar { it.uppercase() },
+                    MomentTagEntity.TAG_TYPE_THING
+                )
             }
         }
 
         return found
-            .filterKeys { it !in existingTags }
-            .map { (tag, type) ->
-                EntryTagEntity(
-                    entryId = 0L,
-                    tag = tag,
-                    tagType = type,
-                    source = "ML_AUTO",
-                    userConfirmed = true
-                )
-            }
+            .filterKeys { it.trim().lowercase() !in existingNormalized }
+            .map { (tag, type) -> ExtractedTag(tag, type) }
             .take(5)
     }
 }

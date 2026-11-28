@@ -1,7 +1,6 @@
 package com.sonder.app.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,27 +17,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.sonder.app.data.local.entity.DayState
-import com.sonder.app.ui.theme.auraColor
+import com.sonder.app.data.local.entity.EmergentDayWeather
 
 /**
- * The non-color geometric marker system. Color is never the only signifier:
- * Bright = filled sun spark, Warm = soft filled dot, Ordinary = hollow ring,
- * Heavy = quiet crescent.
+ * Non-colour geometric marker for a day's emergent weather. Colour is never the
+ * only signifier: Golden Sun = filled sun spark, Part-Sun = half sun / half
+ * crescent, Dusk Rain = quiet crescent, Quiet Mist = hollow ring.
  */
 @Composable
-fun DayStateMarker(
-    state: DayState?,
+fun DayWeatherMarker(
+    weather: EmergentDayWeather?,
     counted: Boolean = true,
     modifier: Modifier = Modifier,
     size: Dp = 34.dp
 ) {
-    val base = state?.auraColor() ?: MaterialTheme.colorScheme.outline
+    val base = weather?.auraColor() ?: MaterialTheme.colorScheme.outline
     Canvas(modifier = modifier.size(size)) {
         val radius = this.size.minDimension / 2f
         val center = Offset(this.size.width / 2f, this.size.height / 2f)
@@ -54,14 +53,14 @@ fun DayStateMarker(
             )
         }
 
-        val ink = when (state) {
-            DayState.ORDINARY -> Color(0xFF4A453F)
-            DayState.HEAVY -> Color(0xFFE3E9F3)
+        val ink = when (weather) {
+            EmergentDayWeather.QUIET_MIST -> Color(0xFF4A453F)
+            EmergentDayWeather.DUSK_RAIN -> Color(0xFFE3E9F3)
             else -> Color.White.copy(alpha = 0.92f)
         }
 
-        when (state) {
-            DayState.BRIGHT -> {
+        when (weather) {
+            EmergentDayWeather.GOLDEN_SUN -> {
                 val r = radius * 0.52f
                 val w = radius * 0.13f
                 drawLine(ink, center + Offset(0f, -r), center + Offset(0f, r), w)
@@ -80,24 +79,29 @@ fun DayStateMarker(
                 )
             }
 
-            DayState.WARM -> {
-                drawCircle(ink, radius * 0.34f, center)
+            EmergentDayWeather.PART_SUN_PART_RAIN -> {
+                drawCircle(ink, radius * 0.28f, center + Offset(-radius * 0.18f, 0f))
+                val path = Path().apply {
+                    val r = radius * 0.30f
+                    addArc(
+                        Rect(
+                            center.x + radius * 0.18f - r,
+                            center.y - r,
+                            center.x + radius * 0.18f + r,
+                            center.y + r
+                        ),
+                        35f,
+                        245f
+                    )
+                }
+                drawPath(path, ink, style = Stroke(width = radius * 0.12f))
             }
 
-            DayState.ORDINARY -> {
-                drawCircle(ink, radius * 0.42f, center, style = Stroke(width = radius * 0.13f))
-            }
-
-            DayState.HEAVY -> {
+            EmergentDayWeather.DUSK_RAIN -> {
                 val path = Path().apply {
                     val r = radius * 0.52f
                     addArc(
-                        Rect(
-                            center.x - r,
-                            center.y - r,
-                            center.x + r,
-                            center.y + r
-                        ),
+                        Rect(center.x - r, center.y - r, center.x + r, center.y + r),
                         35f,
                         245f
                     )
@@ -105,15 +109,33 @@ fun DayStateMarker(
                 drawPath(path, ink, style = Stroke(width = radius * 0.14f))
             }
 
+            EmergentDayWeather.QUIET_MIST -> {
+                drawCircle(
+                    ink,
+                    radius * 0.42f,
+                    center,
+                    style = Stroke(width = radius * 0.13f)
+                )
+            }
+
             null -> {
-                drawCircle(ink.copy(alpha = 0.6f), radius * 0.30f, center, style = Stroke(width = radius * 0.10f))
+                drawCircle(
+                    ink.copy(alpha = 0.6f),
+                    radius * 0.30f,
+                    center,
+                    style = Stroke(width = radius * 0.10f)
+                )
             }
         }
     }
 }
 
-private fun Rect(left: Float, top: Float, right: Float, bottom: Float) =
-    androidx.compose.ui.geometry.Rect(left, top, right, bottom)
+fun EmergentDayWeather.auraColor(): Color = when (this) {
+    EmergentDayWeather.GOLDEN_SUN -> Color(0xFFE5A645)
+    EmergentDayWeather.PART_SUN_PART_RAIN -> Color(0xFFB98A5E)
+    EmergentDayWeather.DUSK_RAIN -> Color(0xFF566784)
+    EmergentDayWeather.QUIET_MIST -> Color(0xFFCEC5BA)
+}
 
 @Composable
 fun ScreenHeader(
@@ -151,27 +173,6 @@ fun ScreenHeader(
                     imageVector = Icons.Outlined.Settings,
                     contentDescription = "Settings",
                     tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun StateLegend(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        DayState.entries.forEach { state ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DayStateMarker(state = state, counted = true, size = 16.dp)
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = state.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
                 )
             }
         }

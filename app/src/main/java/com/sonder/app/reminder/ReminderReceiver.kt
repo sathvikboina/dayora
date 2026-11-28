@@ -14,6 +14,7 @@ import com.sonder.app.MainActivity
 import com.sonder.app.R
 import com.sonder.app.SonderApp
 import com.sonder.app.data.local.SonderDatabase
+import com.sonder.app.data.local.entity.OpenWhenEnvelopeEntity
 import com.sonder.app.data.prefs.SonderPreferences
 import com.sonder.app.util.DateDisplayFormatter
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +23,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-
 class ReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -33,12 +33,12 @@ class ReminderReceiver : BroadcastReceiver() {
                 val settings = prefs.settings.first()
                 if (settings.reminderEnabled) {
                     val today = DateDisplayFormatter.toStorageIso(LocalDate.now())
-                    val entry = SonderDatabase.getInstance(context)
-                        .dailyEntryDao()
-                        .getByDate(today)
-                    if (entry == null) {
+                    val dao = SonderDatabase.getInstance(context).momentDao()
+                    val momentCount = dao.countMomentsForDate(today)
+                    if (momentCount == 0) {
                         notifyQuietly(context)
                     }
+                    notifyReadyEnvelopes(context, prefs, settings.lastEnvelopeNoticeIso, today, dao.getAllEnvelopes())
                     ReminderScheduler.schedule(
                         context,
                         settings.reminderHour,
@@ -51,8 +51,51 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notifyQuietly(context: Context) {
+    private suspend fun notifyReadyEnvelopes(
+        context: Context,
+        prefs: SonderPreferences,
+        lastNoticeIso: String?,
+        todayIso: String,
+        envelopes: List<OpenWhenEnvelopeEntity>
+    ) {
+        if (lastNoticeIso == todayIso) return
+        val ready = envelopes.filter { !it.isOpened && it.unlockDate <= todayIso }
+        if (ready.isEmpty()) return
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) return
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val openIntent = PendingIntent.getActivity(
+            context,
+            1,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val text = if (ready.size == 1) {
+            "From ${DateDisplayFormatter.isoToDisplayString(ready.first().unlockDate)}"
+        } else {
+            "${ready.size} sealed notes are waiting"
+        }
+        val notification = NotificationCompat.Builder(context, SonderApp.CHANNEL_REMINDER)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("An envelope is ready to open")
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(context).notify(4211, notification)
+        prefs.setLastEnvelopeNoticeIso(todayIso)
+    }
+
+    private fun notifyQuietly(context: Context) {        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS

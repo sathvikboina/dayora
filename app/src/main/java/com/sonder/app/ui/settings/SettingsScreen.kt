@@ -1,28 +1,24 @@
 package com.sonder.app.ui.settings
 
-import android.app.TimePickerDialog
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -32,371 +28,359 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.sonder.app.data.prefs.SonderSettings
 import com.sonder.app.data.prefs.ThemeMode
-import com.sonder.app.ui.RestoreReport
+import com.sonder.app.ui.components.ScreenHeader
 import com.sonder.app.util.DateDisplayFormatter
-import kotlinx.coroutines.launch
 import java.time.LocalDate
-
-private enum class PasswordAction { BACKUP, RESTORE }
 
 @Composable
 fun SettingsScreen(
     settings: SonderSettings,
-    entryCount: Int,
+    momentCount: Int,
     onBack: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onEnableLock: (String) -> Unit,
     onDisableLock: () -> Unit,
     onUpdatePin: (String) -> Unit,
+    onSetVaultPin: (String) -> Unit,
+    onDisableVaultLock: () -> Unit,
     onSetReminder: (Boolean, Int, Int) -> Unit,
-    onExportCsv: suspend (Uri) -> Unit,
-    onExportBackup: suspend (Uri, String) -> Unit,
-    onRestore: suspend (Uri, String) -> RestoreReport,
-    onDeleteAll: suspend () -> Unit,
+    onExportCsv: (Uri) -> Unit,
+    onExportBackup: (Uri, String) -> Unit,
+    onRestore: (Uri, String) -> Unit,
+    onDeleteAll: () -> Unit,
     onNotify: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
     var showPinDialog by remember { mutableStateOf(false) }
-    var pinDialogIsChange by remember { mutableStateOf(false) }
-    var showPasswordDialog by remember { mutableStateOf(false) }
-    var passwordAction by remember { mutableStateOf(PasswordAction.BACKUP) }
-    var pendingPassword by remember { mutableStateOf<String?>(null) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showUpdatePin by remember { mutableStateOf(false) }
+    var showVaultDialog by remember { mutableStateOf(false) }
+    var showBackupPassword by remember { mutableStateOf(false) }
+    var showRestorePassword by remember { mutableStateOf(false) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var backupTarget by remember { mutableStateOf<Uri?>(null) }
+    var showDeleteAll by remember { mutableStateOf(false) }
+    var reminderHour by remember(settings.reminderHour) { mutableStateOf(settings.reminderHour) }
+    var reminderMinute by remember(settings.reminderMinute) { mutableStateOf(settings.reminderMinute) }
 
     val csvLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                runCatching { onExportCsv(uri) }
-                    .onSuccess { onNotify("CSV exported with DD-MM-YYYY dates.") }
-                    .onFailure { onNotify("Could not export CSV: ${it.message}") }
-            }
-        }
-    }
+    ) { uri -> uri?.let(onExportCsv) }
 
     val backupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        val password = pendingPassword
-        pendingPassword = null
-        if (uri != null && password != null) {
-            scope.launch {
-                runCatching { onExportBackup(uri, password) }
-                    .onSuccess { onNotify("Encrypted backup saved.") }
-                    .onFailure { onNotify("Backup failed: ${it.message}") }
-            }
+        if (uri != null) {
+            pendingRestoreUri = null
+            backupTarget = uri
+            showBackupPassword = true
         }
     }
 
     val restoreLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        val password = pendingPassword
-        pendingPassword = null
-        if (uri != null && password != null) {
-            scope.launch {
-                runCatching { onRestore(uri, password) }
-                    .onSuccess { report: RestoreReport ->
-                        onNotify(
-                            if (report.imported == 0) "Nothing newer to restore."
-                            else "Restored ${report.imported} ${if (report.imported == 1) "memory" else "memories"}."
-                        )
-                    }
-                    .onFailure { onNotify("Restore failed — wrong password or damaged file.") }
-            }
+        if (uri != null) {
+            pendingRestoreUri = uri
+            showRestorePassword = true
         }
     }
 
-    val notificationPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            onSetReminder(true, settings.reminderHour, settings.reminderMinute)
-            onNotify("A gentle evening reminder is set.")
-        } else {
-            onNotify("Notifications are off. You can still enable the reminder later.")
-        }
-    }
-
-    Column(
+    LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp, vertical = 10.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = "Back"
-                )
-            }
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(start = 4.dp)
+        item {
+            Spacer(modifier = Modifier.height(18.dp))
+            ScreenHeader(
+                title = "Settings",
+                subtitle = "$momentCount moments on this device",
+                trailing = { TextButton(onClick = onBack) { Text("Back") } }
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-        SectionTitle("APPEARANCE")
-        Text(
-            text = "Auto Aura follows the light of the day.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ThemeMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = settings.themeMode == mode,
-                    onClick = { onThemeMode(mode) },
-                    label = {
-                        Text(
-                            when (mode) {
-                                ThemeMode.AUTO -> "Auto Aura"
-                                ThemeMode.LIGHT -> "Light"
-                                ThemeMode.DARK -> "Dark"
+        item { Section("APPEARANCE") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = settings.themeMode == mode,
+                        onClick = { onThemeMode(mode) },
+                        label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                    )
+                }
+            }
+        }
+
+        item { Section("PRIVACY") }
+        item {
+            SettingsRow(
+                title = "App lock",
+                subtitle = if (settings.pinHash == null) "No PIN set" else "PIN + biometrics",
+                checked = settings.appLockEnabled,
+                onCheckedChange = { enabled ->
+                    if (enabled) showPinDialog = true else onDisableLock()
+                }
+            )
+        }
+        if (settings.pinHash != null && settings.appLockEnabled) {
+            item {
+                TextButton(onClick = { showUpdatePin = true }) { Text("Change PIN") }
+            }
+        }
+        item {
+            SettingsRow(
+                title = "Separate vault lock",
+                subtitle = if (settings.vaultPinHash == null) {
+                    "Guards the Rain Room and Unsent drawer"
+                } else {
+                    "Vault PIN is on"
+                },
+                checked = settings.vaultPinHash != null,
+                onCheckedChange = { enabled ->
+                    if (enabled) showVaultDialog = true else onDisableVaultLock()
+                }
+            )
+        }
+
+        item { Section("A QUIET REMINDER") }
+        item {
+            SettingsRow(
+                title = "Evening nudge",
+                subtitle = "One optional notice. No streaks, no guilt.",
+                checked = settings.reminderEnabled,
+                onCheckedChange = { enabled ->
+                    onSetReminder(enabled, reminderHour, reminderMinute)
+                }
+            )
+        }
+        if (settings.reminderEnabled) {
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = reminderHour.toString().padStart(2, '0'),
+                        onValueChange = { text ->
+                            val value = text.filter { it.isDigit() }.take(2).toIntOrNull()
+                            if (value != null && value in 0..23) {
+                                reminderHour = value
+                                onSetReminder(true, value, reminderMinute)
                             }
+                        },
+                        label = { Text("Hour") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = reminderMinute.toString().padStart(2, '0'),
+                        onValueChange = { text ->
+                            val value = text.filter { it.isDigit() }.take(2).toIntOrNull()
+                            if (value != null && value in 0..59) {
+                                reminderMinute = value
+                                onSetReminder(true, reminderHour, value)
+                            }
+                        },
+                        label = { Text("Minute") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            item {
+                TextButton(onClick = onOpenBatterySettings) {
+                    Text("Allow reminders through battery optimisation")
+                }
+            }
+        }
+
+        item { Section("BACKUP & PORTABILITY") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(onClick = {
+                    csvLauncher.launch("sonder_moments_${DateDisplayFormatter.toDisplayString(LocalDate.now())}.csv")
+                }) { Text("Export a plain CSV") }
+                TextButton(onClick = {
+                    backupLauncher.launch("sonder_${DateDisplayFormatter.toDisplayString(LocalDate.now())}.sonder")
+                }) { Text("Export an encrypted .sonder archive") }
+                TextButton(onClick = {
+                    restoreLauncher.launch(arrayOf("application/octet-stream", "application/json", "*/*"))
+                }) { Text("Restore from a backup") }
+                Text(
+                    "Last backup: " + if (settings.lastBackupAt > 0L) {
+                        DateDisplayFormatter.isoToDisplayString(
+                            java.time.Instant.ofEpochMilli(settings.lastBackupAt)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDate()
+                                .let { DateDisplayFormatter.toStorageIso(it) }
                         )
-                    }
+                    } else {
+                        "never"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                 )
             }
         }
 
-        SettingsDivider()
-        SectionTitle("PRIVACY")
-        ToggleRow(
-            title = "App lock",
-            subtitle = if (settings.pinHash == null) {
-                "Set a PIN first; biometrics unlock when available."
-            } else {
-                "Biometric or PIN unlock when Sonder opens."
-            },
-            checked = settings.appLockEnabled,
-            onCheckedChange = { enabled ->
-                if (enabled) {
-                    pinDialogIsChange = false
-                    showPinDialog = true
-                } else {
-                    onDisableLock()
+        item { Section("THIS DEVICE") }
+        item {
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text("Everything stays on this phone.", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "No account, no cloud, no analytics. Airplane mode changes nothing.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                    )
                 }
             }
-        )
-        if (settings.pinHash != null) {
-            TextButton(onClick = {
-                pinDialogIsChange = true
-                showPinDialog = true
-            }) { Text("Change PIN") }
         }
-        Text(
-            text = "No account, no cloud, no analytics. Your vault lives only on this phone.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-        )
-
-        SettingsDivider()
-        SectionTitle("REMINDER")
-        ToggleRow(
-            title = "One quiet evening nudge",
-            subtitle = "Around ${formatTime(settings.reminderHour, settings.reminderMinute)}. Skipped automatically if today is already logged.",
-            checked = settings.reminderEnabled,
-            onCheckedChange = { enabled ->
-                if (!enabled) {
-                    onSetReminder(false, settings.reminderHour, settings.reminderMinute)
-                } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    onSetReminder(true, settings.reminderHour, settings.reminderMinute)
-                    onNotify("A gentle evening reminder is set.")
-                }
-            }
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = {
-                TimePickerDialog(
-                    context,
-                    { _, hour, minute ->
-                        onSetReminder(settings.reminderEnabled, hour, minute)
-                    },
-                    settings.reminderHour,
-                    settings.reminderMinute,
-                    true
-                ).show()
-            }) {
-                Text("Change time · ${formatTime(settings.reminderHour, settings.reminderMinute)}")
+        item {
+            TextButton(
+                onClick = { showDeleteAll = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Delete all data", color = MaterialTheme.colorScheme.error)
             }
         }
-        TextButton(onClick = onOpenBatterySettings) {
-            Text("Reminders not arriving? OEM battery help")
+
+        item {
+            Text(
+                "Sonder v2 · built for real days, not perfect ones.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
         }
-
-        SettingsDivider()
-        SectionTitle("YOUR DATA")
-        Text(
-            text = "$entryCount ${if (entryCount == 1) "memory" else "memories"} on this device. Embeddings are recomputed on restore.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = { csvLauncher.launch("sonder_export_${DateDisplayFormatter.toDisplayString(LocalDate.now())}.csv") },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Export CSV (plain text)") }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = {
-                passwordAction = PasswordAction.BACKUP
-                showPasswordDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Encrypted backup (AES-256-GCM)") }
-        Spacer(modifier = Modifier.height(8.dp))
-        TextButton(
-            onClick = {
-                passwordAction = PasswordAction.RESTORE
-                showPasswordDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Restore from encrypted backup") }
-        Text(
-            text = "A lost password cannot be recovered. Keep it somewhere safe.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        TextButton(
-            onClick = { showDeleteConfirm = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Delete all data", color = MaterialTheme.colorScheme.error)
-        }
-
-        SettingsDivider()
-        SectionTitle("ABOUT")
-        Text(
-            text = "Sonder is a living memory vault — no streaks, no scores, no guilt. " +
-                "It runs completely offline: tone routing, entity threads and semantic rescue " +
-                "all happen on your phone's silicon.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = "Version 1.0 · No data collected. No ads. No trackers.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
-            textAlign = TextAlign.Start
-        )
-
-        Spacer(modifier = Modifier.height(40.dp))
+        item { Spacer(modifier = Modifier.height(24.dp)) }
     }
 
     if (showPinDialog) {
         PinDialog(
-            title = if (pinDialogIsChange) "Change your PIN" else "Create a PIN",
+            title = "Create an app PIN",
+            confirmLabel = "Enable lock",
             onDismiss = { showPinDialog = false },
             onConfirm = { pin ->
-                if (pinDialogIsChange) onUpdatePin(pin) else onEnableLock(pin)
                 showPinDialog = false
-                onNotify(if (pinDialogIsChange) "PIN updated." else "App lock is on.")
+                onEnableLock(pin)
             }
         )
     }
-
-    if (showPasswordDialog) {
+    if (showUpdatePin) {
+        PinDialog(
+            title = "Change your PIN",
+            confirmLabel = "Update",
+            onDismiss = { showUpdatePin = false },
+            onConfirm = { pin ->
+                showUpdatePin = false
+                onUpdatePin(pin)
+            }
+        )
+    }
+    if (showVaultDialog) {
+        PinDialog(
+            title = "Create a vault PIN",
+            subtitle = "This guards the Rain Room and Unsent notes, even when the app is open.",
+            confirmLabel = "Enable vault lock",
+            onDismiss = { showVaultDialog = false },
+            onConfirm = { pin ->
+                showVaultDialog = false
+                onSetVaultPin(pin)
+            }
+        )
+    }
+    if (showBackupPassword) {
         PasswordDialog(
-            title = if (passwordAction == PasswordAction.BACKUP) {
-                "Protect your backup"
-            } else {
-                "Restore a backup"
-            },
-            confirmLabel = if (passwordAction == PasswordAction.BACKUP) "Choose where to save" else "Choose backup file",
-            requireConfirmation = passwordAction == PasswordAction.BACKUP,
-            onDismiss = { showPasswordDialog = false },
+            title = "Protect this backup",
+            confirmLabel = "Export",
+            onDismiss = { showBackupPassword = false; backupTarget = null },
             onConfirm = { password ->
-                showPasswordDialog = false
-                pendingPassword = password
-                if (passwordAction == PasswordAction.BACKUP) {
-                    backupLauncher.launch(DateDisplayFormatter.backupFilename())
-                } else {
-                    restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                showBackupPassword = false
+                val target = backupTarget
+                backupTarget = null
+                if (target != null) {
+                    if (password.length >= 6) onExportBackup(target, password)
+                    else onNotify("Use at least 6 characters.")
                 }
             }
         )
     }
-
-    if (showDeleteConfirm) {
+    if (showRestorePassword) {
+        PasswordDialog(
+            title = "Restore this backup",
+            confirmLabel = "Restore",
+            onDismiss = { showRestorePassword = false; pendingRestoreUri = null },
+            onConfirm = { password ->
+                showRestorePassword = false
+                val target = pendingRestoreUri
+                pendingRestoreUri = null
+                if (target != null) onRestore(target, password)
+            }
+        )
+    }
+    if (showDeleteAll) {
         AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
+            onDismissRequest = { showDeleteAll = false },
             title = { Text("Delete everything?") },
             text = {
                 Text(
-                    "Every memory, tag and vector on this phone will be erased. " +
-                        "This cannot be undone unless you have a backup."
+                    "Every moment, voice note, chapter and envelope on this phone will be " +
+                        "removed. This cannot be undone without a backup."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showDeleteConfirm = false
-                    scope.launch {
-                        runCatching { onDeleteAll() }
-                            .onSuccess { onNotify("All local data erased.") }
-                            .onFailure { onNotify("Could not erase data: ${it.message}") }
-                    }
-                }) { Text("Erase everything", color = MaterialTheme.colorScheme.error) }
+                    showDeleteAll = false
+                    onDeleteAll()
+                }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Keep my vault") }
-            }
+            dismissButton = { TextButton(onClick = { showDeleteAll = false }) { Text("Cancel") } }
         )
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-    )
-    Spacer(modifier = Modifier.height(6.dp))
+private fun Section(title: String) {
+    Column {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+        )
+    }
 }
 
 @Composable
-private fun SettingsDivider() {
-    Spacer(modifier = Modifier.height(20.dp))
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-    Spacer(modifier = Modifier.height(18.dp))
-}
-
-@Composable
-private fun ToggleRow(
+private fun SettingsRow(
     title: String,
     subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -404,7 +388,7 @@ private fun ToggleRow(
             Text(
                 subtitle,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
@@ -414,26 +398,26 @@ private fun ToggleRow(
 @Composable
 private fun PinDialog(
     title: String,
+    subtitle: String? = null,
+    confirmLabel: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
     var pin by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
-    val valid = pin.length in 4..8 && pin == confirm
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column {
-                Text(
-                    "4–8 digits. If you forget it, the only way back in is erasing local data.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+                if (subtitle != null) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 OutlinedTextField(
                     value = pin,
-                    onValueChange = { value -> pin = value.filter { it.isDigit() }.take(8) },
-                    label = { Text("PIN") },
+                    onValueChange = { pin = it.filter { ch -> ch.isDigit() }.take(8) },
+                    label = { Text("PIN (4–8 digits)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true
@@ -441,8 +425,8 @@ private fun PinDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = confirm,
-                    onValueChange = { value -> confirm = value.filter { it.isDigit() }.take(8) },
-                    label = { Text("Confirm PIN") },
+                    onValueChange = { confirm = it.filter { ch -> ch.isDigit() }.take(8) },
+                    label = { Text("Repeat PIN") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true
@@ -450,11 +434,12 @@ private fun PinDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(pin) }, enabled = valid) { Text("Save PIN") }
+            TextButton(
+                onClick = { onConfirm(pin) },
+                enabled = pin.length in 4..8 && pin == confirm
+            ) { Text(confirmLabel) }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -462,20 +447,17 @@ private fun PinDialog(
 private fun PasswordDialog(
     title: String,
     confirmLabel: String,
-    requireConfirmation: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
     var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    val valid = password.length >= 8 && (!requireConfirmation || password == confirm)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column {
                 Text(
-                    "Use at least 8 characters. This password is never stored anywhere.",
+                    "The password cannot be recovered. Keep it somewhere safe.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -486,33 +468,14 @@ private fun PasswordDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true
                 )
-                if (requireConfirmation) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = confirm,
-                        onValueChange = { confirm = it },
-                        label = { Text("Confirm password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
-                    )
-                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(password) }, enabled = valid) { Text(confirmLabel) }
+            TextButton(
+                onClick = { onConfirm(password) },
+                enabled = password.isNotBlank()
+            ) { Text(confirmLabel) }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-private fun formatTime(hour: Int, minute: Int): String {
-    val suffix = if (hour < 12) "AM" else "PM"
-    val displayHour = when {
-        hour == 0 -> 12
-        hour > 12 -> hour - 12
-        else -> hour
-    }
-    return "%d:%02d %s".format(displayHour, minute, suffix)
 }
